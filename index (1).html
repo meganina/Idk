@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Whip & Saber</title>
+    <style>
+        :root { --accent: #ffca28; }
+        body { 
+            margin: 0; background: #121212; color: white; font-family: sans-serif; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            height: 100vh; text-align: center; overflow: hidden;
+        }
+        .mode-toggle { margin-bottom: 20px; display: flex; gap: 10px; }
+        button { 
+            padding: 15px 25px; border-radius: 10px; border: 2px solid var(--accent);
+            background: transparent; color: white; font-weight: bold; cursor: pointer;
+        }
+        button.active { background: var(--accent); color: black; }
+        #powerBtn { 
+            width: 180px; height: 180px; border-radius: 50%; border: 10px solid var(--accent);
+            background: #222; font-size: 1.5rem; margin-top: 20px; box-shadow: 0 0 20px rgba(255, 202, 40, 0.2);
+        }
+        #powerBtn.on { box-shadow: 0 0 40px var(--accent); }
+        .hint { color: #666; margin-top: 15px; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+    <div class="mode-toggle">
+        <button id="whipMode" class="active" onclick="setMode('whip')">WHIP</button>
+        <button id="saberMode" onclick="setMode('saber')">LIGHTSABER</button>
+    </div>
+
+    <div id="status">Tap Start to Arm</div>
+    <button id="powerBtn">START</button>
+    <p class="hint">Whip: 1.5s delay | Saber: Instant</p>
+
+    <script>
+        let audioCtx, whipSound, saberSound;
+        let currentMode = 'whip';
+        let isArmed = false;
+        let lastTrigger = 0;
+
+        const powerBtn = document.getElementById('powerBtn');
+        const status = document.getElementById('status');
+
+        async function loadSounds() {
+            try {
+                const whipRes = await fetch('universfield-whip-02-242215.mp3');
+                const saberRes = await fetch('freesound_community-swing3-94210.mp3');
+                whipSound = await audioCtx.decodeAudioData(await whipRes.arrayBuffer());
+                saberSound = await audioCtx.decodeAudioData(await saberRes.arrayBuffer());
+                status.innerText = "READY!";
+                powerBtn.innerText = "ON";
+                powerBtn.classList.add('on');
+            } catch (e) { status.innerText = "Error loading files!"; }
+        }
+
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('whipMode').classList.toggle('active', mode === 'whip');
+            document.getElementById('saberMode').classList.toggle('active', mode === 'saber');
+            document.documentElement.style.setProperty('--accent', mode === 'whip' ? '#ffca28' : '#00e5ff');
+        }
+
+        function playSound(buffer, delay = 0) {
+            setTimeout(() => {
+                const source = audioCtx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioCtx.destination);
+                source.start(0);
+                if (navigator.vibrate) navigator.vibrate(mode === 'whip' ? 100 : 40);
+            }, delay);
+        }
+
+        window.addEventListener('devicemotion', (e) => {
+            if (!isArmed || !whipSound || !saberSound) return;
+            const acc = e.acceleration;
+            const force = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
+            const now = Date.now();
+
+            if (force > 25 && (now - lastTrigger > 500)) {
+                lastTrigger = now;
+                if (currentMode === 'whip') {
+                    playSound(whipSound, 1500); // 1.5 Second Delay
+                } else {
+                    playSound(saberSound, 0); // Instant Saber Swing
+                }
+            }
+        });
+
+        powerBtn.addEventListener('click', () => {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                loadSounds();
+                isArmed = true;
+            }
+        });
+    </script>
+</body>
+</html>
