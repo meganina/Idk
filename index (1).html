@@ -3,90 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Whip & Saber</title>
+    <title>Saber Combo Pro</title>
     <style>
-        :root { --accent: #ffca28; }
+        :root { --accent: #00e5ff; }
         body { 
-            margin: 0; background: #121212; color: white; font-family: sans-serif; 
+            margin: 0; background: #0a0a0a; color: white; font-family: sans-serif; 
             display: flex; flex-direction: column; align-items: center; justify-content: center; 
             height: 100vh; text-align: center; overflow: hidden;
         }
-        .mode-toggle { margin-bottom: 20px; display: flex; gap: 10px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 90%; margin-bottom: 20px; }
         button { 
-            padding: 15px 25px; border-radius: 10px; border: 2px solid var(--accent);
-            background: transparent; color: white; font-weight: bold; cursor: pointer;
+            padding: 15px; border-radius: 8px; border: 2px solid var(--accent);
+            background: rgba(255,255,255,0.05); color: white; font-weight: bold;
         }
-        button.active { background: var(--accent); color: black; }
+        button.active { background: var(--accent); color: black; box-shadow: 0 0 15px var(--accent); }
         #powerBtn { 
-            width: 180px; height: 180px; border-radius: 50%; border: 10px solid var(--accent);
-            background: #222; font-size: 1.5rem; margin-top: 20px; box-shadow: 0 0 20px rgba(255, 202, 40, 0.2);
+            width: 140px; height: 140px; border-radius: 50%; border: 6px solid var(--accent);
+            background: #1a1a1a; font-size: 1.1rem; margin-top: 10px; color: white;
         }
-        #powerBtn.on { box-shadow: 0 0 40px var(--accent); }
-        .hint { color: #666; margin-top: 15px; font-size: 0.9rem; }
+        .status-msg { margin-top: 10px; font-size: 0.9rem; color: var(--accent); height: 20px; text-transform: uppercase; }
     </style>
 </head>
 <body>
 
-    <div class="mode-toggle">
-        <button id="whipMode" class="active" onclick="setMode('whip')">WHIP</button>
-        <button id="saberMode" onclick="setMode('saber')">LIGHTSABER</button>
+    <div class="grid">
+        <button id="saberMode" class="active" onclick="setMode('saber')">SABER</button>
+        <button id="gunMode" onclick="setMode('gun')">BLASTER</button>
+        <button id="whipMode" onclick="setMode('whip')">WHIP</button>
+        <button id="bombMode" onclick="setMode('bomb')">DETONATOR</button>
     </div>
 
-    <div id="status">Tap Start to Arm</div>
-    <button id="powerBtn">START</button>
-    <p class="hint">Whip: 1.5s delay | Saber: Instant</p>
+    <div id="status">System Offline</div>
+    <button id="powerBtn">INITIALIZE</button>
+    <div id="comboMsg" class="status-msg"></div>
 
     <script>
-        let audioCtx, whipSound, saberSound;
-        let currentMode = 'whip';
+        let audioCtx, sounds = {};
+        let currentMode = 'saber';
         let isArmed = false;
-        let lastTrigger = 0;
-
-        const powerBtn = document.getElementById('powerBtn');
-        const status = document.getElementById('status');
+        let isLocked = false;
+        let lastSwingTime = 0;
 
         async function loadSounds() {
-            try {
-                const whipRes = await fetch('universfield-whip-02-242215.mp3');
-                const saberRes = await fetch('freesound_community-swing3-94210.mp3');
-                whipSound = await audioCtx.decodeAudioData(await whipRes.arrayBuffer());
-                saberSound = await audioCtx.decodeAudioData(await saberRes.arrayBuffer());
-                status.innerText = "READY!";
-                powerBtn.innerText = "ON";
-                powerBtn.classList.add('on');
-            } catch (e) { status.innerText = "Error loading files!"; }
+            const files = {
+                whip: 'universfield-whip-02-242215.mp3',
+                saberNormal: 'freesound_community-swing3-94210.mp3',
+                saberCombo: 'audiomass-output.mp3', // Plays during rapid swinging
+                bomb: 'audiomass-output2.mp3', // Your second upload
+                gun: 'https://actions.google.com/sounds/v1/weapons/fire_laser.ogg'
+            };
+            
+            for (const [key, url] of Object.entries(files)) {
+                try {
+                    const res = await fetch(url);
+                    sounds[key] = await audioCtx.decodeAudioData(await res.arrayBuffer());
+                } catch (e) { console.error("Missing:", url); }
+            }
+            document.getElementById('status').innerText = "READY FOR COMBAT";
         }
 
         function setMode(mode) {
             currentMode = mode;
-            document.getElementById('whipMode').classList.toggle('active', mode === 'whip');
-            document.getElementById('saberMode').classList.toggle('active', mode === 'saber');
-            document.documentElement.style.setProperty('--accent', mode === 'whip' ? '#ffca28' : '#00e5ff');
+            document.querySelectorAll('.grid button').forEach(b => b.classList.remove('active'));
+            document.getElementById(mode + 'Mode').classList.add('active');
+            const colors = { saber: '#00e5ff', gun: '#ff4444', whip: '#ffca28', bomb: '#4caf50' };
+            document.documentElement.style.setProperty('--accent', colors[mode]);
         }
 
-        function playSound(buffer, delay = 0) {
+        function play(buffer, vib) {
+            isLocked = true;
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioCtx.destination);
+            source.start(0);
+            if (navigator.vibrate) navigator.vibrate(vib);
+            
+            // Visual Flash
+            const color = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+            document.body.style.backgroundColor = color;
             setTimeout(() => {
-                const source = audioCtx.createBufferSource();
-                source.buffer = buffer;
-                source.connect(audioCtx.destination);
-                source.start(0);
-                if (navigator.vibrate) navigator.vibrate(mode === 'whip' ? 100 : 40);
-            }, delay);
+                document.body.style.backgroundColor = "#0a0a0a";
+                isLocked = false;
+            }, 250); 
         }
 
         window.addEventListener('devicemotion', (e) => {
-            if (!isArmed || !whipSound || !saberSound) return;
+            if (!isArmed || isLocked || !sounds.saberNormal) return;
+
             const acc = e.acceleration;
             const force = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
-            const now = Date.now();
 
-            if (force > 25 && (now - lastTrigger > 500)) {
-                lastTrigger = now;
-                if (currentMode === 'whip') {
-                    playSound(whipSound, 1500); // 1.5 Second Delay
+            if (force > 28) { // Threshold for a "swing"
+                const now = Date.now();
+                const timeSinceLast = (now - lastSwingTime) / 1000;
+                
+                if (currentMode === 'saber') {
+                    // COMBO LOGIC: If swinging again within 0.6s
+                    if (timeSinceLast < 0.6) {
+                        document.getElementById('comboMsg').innerText = "COMBO!";
+                        play(sounds.saberCombo, 80);
+                    } else {
+                        document.getElementById('comboMsg').innerText = "";
+                        play(sounds.saberNormal, 40);
+                    }
                 } else {
-                    playSound(saberSound, 0); // Instant Saber Swing
+                    play(sounds[currentMode], 100);
                 }
+                lastSwingTime = now;
             }
         });
 
@@ -95,6 +118,8 @@
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 loadSounds();
                 isArmed = true;
+                powerBtn.innerText = "ACTIVE";
+                powerBtn.style.boxShadow = "0 0 30px var(--accent)";
             }
         });
     </script>
