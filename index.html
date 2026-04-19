@@ -3,39 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Saber Combo Pro</title>
+    <title>Arsenal Debugger</title>
     <style>
         :root { --accent: #00e5ff; }
-        body { 
-            margin: 0; background: #0a0a0a; color: white; font-family: sans-serif; 
-            display: flex; flex-direction: column; align-items: center; justify-content: center; 
-            height: 100vh; text-align: center; overflow: hidden;
-        }
+        body { margin: 0; background: #0a0a0a; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; overflow: hidden; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 90%; margin-bottom: 20px; }
-        button { 
-            padding: 15px; border-radius: 8px; border: 2px solid var(--accent);
-            background: rgba(255,255,255,0.05); color: white; font-weight: bold;
-        }
-        button.active { background: var(--accent); color: black; box-shadow: 0 0 15px var(--accent); }
-        #powerBtn { 
-            width: 140px; height: 140px; border-radius: 50%; border: 6px solid var(--accent);
-            background: #1a1a1a; font-size: 1.1rem; margin-top: 10px; color: white;
-        }
-        .status-msg { margin-top: 10px; font-size: 0.9rem; color: var(--accent); height: 20px; text-transform: uppercase; }
+        button { padding: 15px; border-radius: 8px; border: 2px solid var(--accent); background: rgba(255,255,255,0.05); color: white; font-weight: bold; }
+        button.active { background: var(--accent); color: black; }
+        #powerBtn { width: 140px; height: 140px; border-radius: 50%; border: 6px solid var(--accent); background: #1a1a1a; font-size: 1.1rem; color: white; }
+        #debugLog { margin-top: 20px; font-size: 0.7rem; color: #ff4444; background: #000; width: 90%; max-height: 100px; overflow-y: auto; padding: 5px; border: 1px solid #333; }
     </style>
 </head>
 <body>
 
     <div class="grid">
         <button id="saberMode" class="active" onclick="setMode('saber')">SABER</button>
-        <button id="gunMode" onclick="setMode('gun')">BLASTER</button>
+        <button id="gunMode" onclick="setMode('gun')">GUN</button>
         <button id="whipMode" onclick="setMode('whip')">WHIP</button>
         <button id="bombMode" onclick="setMode('bomb')">DETONATOR</button>
     </div>
 
-    <div id="status">System Offline</div>
-    <button id="powerBtn">INITIALIZE</button>
-    <div id="comboMsg" class="status-msg"></div>
+    <div id="status">TAP START</div>
+    <button id="powerBtn">START</button>
+    <div id="debugLog">System Logs: Waiting...</div>
 
     <script>
         let audioCtx, sounds = {};
@@ -44,22 +34,35 @@
         let isLocked = false;
         let lastSwingTime = 0;
 
+        const log = (msg) => {
+            const el = document.getElementById('debugLog');
+            el.innerHTML += `<br>> ${msg}`;
+            console.log(msg);
+        };
+
         async function loadSounds() {
             const files = {
                 whip: 'universfield-whip-02-242215.mp3',
                 saberNormal: 'freesound_community-swing3-94210.mp3',
-                saberCombo: 'audiomass-output.mp3', // Plays during rapid swinging
-                bomb: 'audiomass-output2.mp3', // Your second upload
-                gun: 'https://actions.google.com/sounds/v1/weapons/fire_laser.ogg'
+                saberCombo: 'audiomass-output.mp3',
+                gun: 'audiomass-output2.mp3',
+                bomb: 'audiomass-output3.mp3'
             };
             
+            log("Starting audio engine...");
             for (const [key, url] of Object.entries(files)) {
                 try {
                     const res = await fetch(url);
-                    sounds[key] = await audioCtx.decodeAudioData(await res.arrayBuffer());
-                } catch (e) { console.error("Missing:", url); }
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.arrayBuffer();
+                    sounds[key] = await audioCtx.decodeAudioData(data);
+                    log(`Loaded: ${key}`);
+                } catch (e) { 
+                    log(`FAILED: ${key} (${url}). Check filename!`);
+                }
             }
-            document.getElementById('status').innerText = "READY FOR COMBAT";
+            document.getElementById('status').innerText = "ARMORY READY";
+            log("Ready for movement.");
         }
 
         function setMode(mode) {
@@ -71,6 +74,7 @@
         }
 
         function play(buffer, vib) {
+            if (!buffer) return;
             isLocked = true;
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
@@ -78,7 +82,6 @@
             source.start(0);
             if (navigator.vibrate) navigator.vibrate(vib);
             
-            // Visual Flash
             const color = getComputedStyle(document.documentElement).getPropertyValue('--accent');
             document.body.style.backgroundColor = color;
             setTimeout(() => {
@@ -89,21 +92,18 @@
 
         window.addEventListener('devicemotion', (e) => {
             if (!isArmed || isLocked || !sounds.saberNormal) return;
-
             const acc = e.acceleration;
+            if (!acc || acc.x === null) return;
             const force = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
 
-            if (force > 28) { // Threshold for a "swing"
+            if (force > 28) {
                 const now = Date.now();
                 const timeSinceLast = (now - lastSwingTime) / 1000;
                 
                 if (currentMode === 'saber') {
-                    // COMBO LOGIC: If swinging again within 0.6s
                     if (timeSinceLast < 0.6) {
-                        document.getElementById('comboMsg').innerText = "COMBO!";
                         play(sounds.saberCombo, 80);
                     } else {
-                        document.getElementById('comboMsg').innerText = "";
                         play(sounds.saberNormal, 40);
                     }
                 } else {
@@ -113,15 +113,16 @@
             }
         });
 
-        powerBtn.addEventListener('click', () => {
+        document.getElementById('powerBtn').addEventListener('click', function() {
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                log("AudioContext created.");
                 loadSounds();
                 isArmed = true;
-                powerBtn.innerText = "ACTIVE";
-                powerBtn.style.boxShadow = "0 0 30px var(--accent)";
+                this.innerText = "ACTIVE";
             }
         });
     </script>
 </body>
 </html>
+
