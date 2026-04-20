@@ -3,109 +3,106 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Arsenal Debugger</title>
+    <title>AK-47 Tactical Arsenal</title>
     <style>
-        :root { --accent: #00e5ff; }
+        :root { --accent: #ff4444; }
         body { margin: 0; background: #0a0a0a; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; overflow: hidden; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 90%; margin-bottom: 20px; }
         button { padding: 15px; border-radius: 8px; border: 2px solid var(--accent); background: rgba(255,255,255,0.05); color: white; font-weight: bold; }
-        button.active { background: var(--accent); color: black; }
+        button.active { background: var(--accent); color: black; box-shadow: 0 0 15px var(--accent); }
         #powerBtn { width: 140px; height: 140px; border-radius: 50%; border: 6px solid var(--accent); background: #1a1a1a; font-size: 1.1rem; color: white; }
-        #debugLog { margin-top: 20px; font-size: 0.7rem; color: #ff4444; background: #000; width: 90%; max-height: 100px; overflow-y: auto; padding: 5px; border: 1px solid #333; }
+        .status-msg { margin-top: 10px; font-size: 0.9rem; color: var(--accent); height: 20px; font-weight: bold; }
     </style>
 </head>
 <body>
 
     <div class="grid">
-        <button id="saberMode" class="active" onclick="setMode('saber')">SABER</button>
-        <button id="gunMode" onclick="setMode('gun')">GUN</button>
+        <button id="akMode" class="active" onclick="setMode('ak')">AK-47</button>
+        <button id="saberMode" onclick="setMode('saber')">SABER</button>
         <button id="whipMode" onclick="setMode('whip')">WHIP</button>
         <button id="bombMode" onclick="setMode('bomb')">DETONATOR</button>
     </div>
 
-    <div id="status">TAP START</div>
+    <div id="status">OFFLINE</div>
     <button id="powerBtn">START</button>
-    <div id="debugLog">System Logs: Waiting...</div>
+    <div id="feedback" class="status-msg"></div>
 
     <script>
-        let audioCtx, sounds = {};
-        let currentMode = 'saber';
-        let isArmed = false;
-        let isLocked = false;
-        let lastSwingTime = 0;
+        let audioCtx, sounds = {}, videoTrack;
+        let currentMode = 'ak';
+        let isArmed = false, isLocked = false, lastSwingTime = 0;
 
-        const log = (msg) => {
-            const el = document.getElementById('debugLog');
-            el.innerHTML += `<br>> ${msg}`;
-            console.log(msg);
-        };
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                videoTrack = stream.getVideoTracks()[0];
+            } catch (e) { console.error("Camera access denied."); }
+        }
+
+        async function toggleFlash(state) {
+            if (videoTrack && videoTrack.getCapabilities().torch) {
+                try { await videoTrack.applyConstraints({ advanced: [{ torch: state }] }); } catch (e) {}
+            }
+        }
 
         async function loadSounds() {
             const files = {
+                ak: 'audiomass-output2.mp3', // Using your Gun sound for AK
                 whip: 'universfield-whip-02-242215.mp3',
                 saberNormal: 'freesound_community-swing3-94210.mp3',
                 saberCombo: 'audiomass-output.mp3',
-                gun: 'audiomass-output2.mp3',
                 bomb: 'audiomass-output3.mp3'
             };
-            
-            log("Starting audio engine...");
             for (const [key, url] of Object.entries(files)) {
                 try {
                     const res = await fetch(url);
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    const data = await res.arrayBuffer();
-                    sounds[key] = await audioCtx.decodeAudioData(data);
-                    log(`Loaded: ${key}`);
-                } catch (e) { 
-                    log(`FAILED: ${key} (${url}). Check filename!`);
-                }
+                    sounds[key] = await audioCtx.decodeAudioData(await res.arrayBuffer());
+                } catch (e) { console.error("Failed to load:", key); }
             }
-            document.getElementById('status').innerText = "ARMORY READY";
-            log("Ready for movement.");
+            document.getElementById('status').innerText = "LOCK & LOADED";
         }
 
         function setMode(mode) {
             currentMode = mode;
             document.querySelectorAll('.grid button').forEach(b => b.classList.remove('active'));
             document.getElementById(mode + 'Mode').classList.add('active');
-            const colors = { saber: '#00e5ff', gun: '#ff4444', whip: '#ffca28', bomb: '#4caf50' };
+            const colors = { ak: '#ff4444', saber: '#00e5ff', whip: '#ffca28', bomb: '#4caf50' };
             document.documentElement.style.setProperty('--accent', colors[mode]);
         }
 
-        function play(buffer, vib) {
+        async function play(buffer, vib, flashDur = 80) {
             if (!buffer) return;
             isLocked = true;
+            
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.connect(audioCtx.destination);
             source.start(0);
-            if (navigator.vibrate) navigator.vibrate(vib);
             
-            const color = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-            document.body.style.backgroundColor = color;
-            setTimeout(() => {
+            toggleFlash(true);
+            if (navigator.vibrate) navigator.vibrate(vib);
+            document.body.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+
+            setTimeout(async () => {
                 document.body.style.backgroundColor = "#0a0a0a";
+                await toggleFlash(false);
+                // Faster reset for AK mode to allow rapid fire
                 isLocked = false;
-            }, 250); 
+            }, flashDur); 
         }
 
         window.addEventListener('devicemotion', (e) => {
-            if (!isArmed || isLocked || !sounds.saberNormal) return;
-            const acc = e.acceleration;
-            if (!acc || acc.x === null) return;
-            const force = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
-
-            if (force > 28) {
+            if (!isArmed || isLocked || !sounds.ak) return;
+            const force = Math.sqrt(e.acceleration.x**2 + e.acceleration.y**2 + e.acceleration.z**2);
+            
+            if (force > 25) {
                 const now = Date.now();
-                const timeSinceLast = (now - lastSwingTime) / 1000;
+                const diff = (now - lastSwingTime) / 1000;
                 
-                if (currentMode === 'saber') {
-                    if (timeSinceLast < 0.6) {
-                        play(sounds.saberCombo, 80);
-                    } else {
-                        play(sounds.saberNormal, 40);
-                    }
+                if (currentMode === 'ak') {
+                    play(sounds.ak, 50, 60); // Super fast reset for AK
+                } else if (currentMode === 'saber') {
+                    diff < 0.6 ? play(sounds.saberCombo, 80) : play(sounds.saberNormal, 40);
                 } else {
                     play(sounds[currentMode], 100);
                 }
@@ -113,16 +110,15 @@
             }
         });
 
-        document.getElementById('powerBtn').addEventListener('click', function() {
+        document.getElementById('powerBtn').addEventListener('click', async function() {
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                log("AudioContext created.");
-                loadSounds();
+                await initCamera();
+                await loadSounds();
                 isArmed = true;
-                this.innerText = "ACTIVE";
+                this.innerText = "ARMED";
             }
         });
     </script>
 </body>
 </html>
-
